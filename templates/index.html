@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login - Coconut Seller 🌴</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<!-- Font Awesome for Eye Icon -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+<style>
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #a8e6cf, #dcedc1);
+}
+
+.container {
+  width: 95%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 30px 25px;
+  border-radius: 20px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  position: relative;
+  text-align: center;
+}
+
+h2 {
+  font-size: 2rem;
+  color: #2E7D32;
+  margin-bottom: 25px;
+  font-weight: bold;
+}
+
+.input-wrapper {
+  position: relative;
+  margin-bottom: 15px;
+}
+
+input {
+  width: 100%;
+  padding: 14px 40px 14px 14px;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+  font-size: 1rem;
+  transition: 0.3s;
+  box-sizing: border-box;
+}
+
+input:focus {
+  border-color: #43A047;
+  box-shadow: 0 0 8px rgba(67,160,71,0.4);
+  outline: none;
+}
+
+.eye-icon {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: #777;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: #43A047;
+  color: white;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+button:hover {
+  background: #2e7d32;
+  transform: translateY(-2px);
+}
+
+#error {
+  color: #D32F2F;
+  font-size: 0.9rem;
+  margin-top: 10px;
+}
+
+p {
+  font-size: 0.95rem;
+  margin-top: 15px;
+}
+
+a {
+  color: #43A047;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+a:hover { text-decoration: underline; }
+</style>
+
+<script>
+  // ----------------- Firebase Setup -----------------
+  const firebaseConfig = {
+    apiKey: "AIzaSyDjsNeExHM1YzGGaAmNrOfOC_TRnTaizZQ",
+    authDomain: "coconutproject2-f55ce.firebaseapp.com",
+    projectId: "coconutproject2-f55ce",
+    storageBucket: "coconutproject2-f55ce.appspot.com",
+    messagingSenderId: "127575640063",
+    appId: "1:127575640063:web:0714a33505dc7bdf76c9ca"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const ADMIN_EMAIL = "groupforcapstone@gmail.com";
+
+  // ----------------- Login Function -----------------
+  async function login() {
+    const email = document.getElementById("login-email").value.trim();
+    const password = document.getElementById("login-password").value.trim();
+    const errorDiv = document.getElementById("error");
+    errorDiv.textContent = "";
+
+    if(!email || !password){
+      errorDiv.textContent = "⚠️ Email and password are required.";
+      return;
+    }
+
+    try {
+      const userCredential = await auth.signInWithEmailAndPassword(email, password);
+      const userId = userCredential.user.uid;
+
+      if(email === ADMIN_EMAIL){
+        // Admin login
+        window.location.href = "admin.html";
+      } else {
+        // Check if user exists in sellers collection
+        const doc = await db.collection("sellers").doc(userId).get();
+        if(doc.exists){
+          localStorage.setItem("sellerId", userId);
+          window.location.href = "dashboard.html";
+        } else {
+          errorDiv.textContent = "⚠️ Seller info not found!";
+        }
+      }
+    } catch (error) {
+      errorDiv.textContent = "⚠️ " + error.message;
+    }
+  }
+
+  // ----------------- Toggle Password Visibility -----------------
+  function togglePassword() {
+    const pw = document.getElementById("login-password");
+    const icon = document.getElementById("login-eye");
+    if(pw.type === "password"){
+      pw.type = "text";
+      icon.classList.replace("fa-eye","fa-eye-slash");
+    } else {
+      pw.type = "password";
+      icon.classList.replace("fa-eye-slash","fa-eye");
+    }
+  }
+</script>
+</head>
+
+<body>
+  <div class="container">
+    <h2>🌴 Login</h2>
+
+    <input type="email" id="login-email" placeholder="📧 Email">
+
+    <div class="input-wrapper">
+      <input type="password" id="login-password" placeholder="🔒 Password">
+      <i class="fa fa-eye eye-icon" id="login-eye" onclick="togglePassword()"></i>
+    </div>
+
+    <button onclick="login()">Login</button>
+
+    <p id="error"></p>
+    <p>Don't have an account? <a href="register.html">Register here</a></p>
+  </div>
+</body>
+</html>

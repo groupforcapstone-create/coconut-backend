@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register - Coconut Seller 🌴</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+<style>
+body {
+  margin:0;
+  font-family:"Segoe UI", Arial, sans-serif;
+  display:flex; justify-content:center; align-items:center;
+  min-height:100vh;
+  background: linear-gradient(135deg,#a8e6cf,#dcedc1);
+}
+
+.container {
+  width:95%; max-width:450px;
+  background: rgba(255,255,255,0.95);
+  padding: 30px 25px;
+  border-radius: 20px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  text-align: center;
+}
+
+h2 {
+  color:#2E7D32; font-size:2rem; margin-bottom:25px; font-weight:bold;
+}
+
+.input-wrapper { position: relative; margin-bottom:15px; }
+
+input, select {
+  width:100%; padding:14px 40px 14px 14px; margin:6px 0;
+  border-radius:12px; border:1px solid #ccc; font-size:1rem;
+  box-sizing:border-box; transition:0.3s;
+}
+
+input:focus, select:focus {
+  outline:none; border-color:#43A047; box-shadow:0 0 8px rgba(67,160,71,0.4);
+}
+
+.eye-icon {
+  position:absolute; top:50%; right:12px; transform:translateY(-50%);
+  cursor:pointer; color:#777;
+}
+
+button {
+  width:100%; padding:14px; margin-top:15px;
+  border:none; border-radius:12px;
+  background:#43A047; color:white; font-weight:bold;
+  cursor:pointer; transition:0.3s;
+}
+
+button:hover { background:#2e7d32; transform:translateY(-2px); }
+
+#error { color:#D32F2F; font-size:0.9rem; margin-top:10px; }
+
+p { font-size:0.95rem; margin-top:15px; }
+
+a { color:#43A047; text-decoration:none; font-weight:bold; }
+a:hover { text-decoration:underline; }
+
+/* ---------------- MODAL ---------------- */
+#modal-success {
+  position:fixed; top:0; left:0; width:100%; height:100%;
+  background:rgba(0,0,0,0.6);
+  display:flex; justify-content:center; align-items:center;
+  opacity:0; pointer-events:none;
+  transition:0.3s;
+}
+#modal-success.show {
+  opacity:1; pointer-events:auto;
+}
+.modal-box {
+  background:white; padding:25px; width:80%; max-width:350px; text-align:center;
+  border-radius:14px; box-shadow:0 4px 15px rgba(0,0,0,0.3);
+  animation: pop 0.25s ease-out;
+}
+@keyframes pop { 0% { transform:scale(0.6); } 100% { transform:scale(1); } }
+.modal-box h2 { color:#2E7D32; margin-bottom:10px; }
+.modal-box button {
+  background:#43A047; color:white; padding:10px 20px; border-radius:8px; margin-top:10px;
+  cursor:pointer;
+}
+
+@media (min-width:600px){
+  .container { padding:40px 35px; }
+  h2 { font-size:2.2rem; }
+  input, select, button { padding:16px; font-size:1.05rem; }
+}
+</style>
+
+<script>
+  // ----------------- Firebase Setup -----------------
+  const firebaseConfig = {
+    apiKey: "AIzaSyDjsNeExHM1YzGGaAmNrOfOC_TRnTaizZQ",
+    authDomain: "coconutproject2-f55ce.firebaseapp.com",
+    projectId: "coconutproject2-f55ce",
+    storageBucket: "coconutproject2-f55ce.appspot.com",
+    messagingSenderId: "127575640063",
+    appId: "1:127575640063:web:0714a33505dc7bdf76c9ca"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  // ----------------- Toggle Password Visibility -----------------
+  function togglePassword() {
+    const pw = document.getElementById("register-password");
+    const icon = document.getElementById("eye-icon");
+    if(pw.type === "password"){
+      pw.type = "text";
+      icon.classList.replace("fa-eye","fa-eye-slash");
+    } else {
+      pw.type = "password";
+      icon.classList.replace("fa-eye-slash","fa-eye");
+    }
+  }
+
+  // ----------------- Register User -----------------
+  async function register() {
+    const name = document.getElementById("register-name").value.trim();
+    const email = document.getElementById("register-email").value.trim();
+    const password = document.getElementById("register-password").value.trim();
+    const address = document.getElementById("register-address").value.trim();
+    const contact = document.getElementById("register-contact").value.trim();
+    const farmName = document.getElementById("register-farm").value.trim();
+    const errorDiv = document.getElementById("error");
+    errorDiv.textContent = "";
+
+    if(!name || !email || !password){
+      errorDiv.textContent = "⚠️ Name, Email, and Password are required.";
+      return;
+    }
+
+    try {
+      const userCredential = await auth.createUserWithEmailAndPassword(email,password);
+      const userId = userCredential.user.uid;
+
+      // Add seller to Firestore
+      await db.collection("sellers").doc(userId).set({
+        name, email, address, contact, farmName,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Show success modal
+      document.getElementById("modal-success").classList.add("show");
+
+    } catch (err) {
+      errorDiv.textContent = "⚠️ "+err.message;
+    }
+  }
+
+  function closeModal() {
+    document.getElementById("modal-success").classList.remove("show");
+    window.location.href = "index.html";
+  }
+</script>
+</head>
+
+<body>
+  <div class="container">
+    <h2>📝 Register</h2>
+
+    <input type="text" id="register-name" placeholder="👤 Name">
+    <input type="email" id="register-email" placeholder="📧 Email">
+
+    <div class="input-wrapper">
+      <input type="password" id="register-password" placeholder="🔒 Password">
+      <i class="fa fa-eye eye-icon" id="eye-icon" onclick="togglePassword()"></i>
+    </div>
+
+    <input type="text" id="register-address" placeholder="🏠 Address">
+    <input type="text" id="register-contact" placeholder="📞 Contact Number">
+    <input type="text" id="register-farm" placeholder="🌴 Farm/Nursery Name">
+
+    <button onclick="register()">Register</button>
+    <p id="error"></p>
+    <p>Already have an account? <a href="index.html">Login here</a></p>
+  </div>
+
+  <!-- ---------------- MODAL ---------------- -->
+  <div id="modal-success">
+    <div class="modal-box">
+      <h2>✅ Register Complete!</h2>
+      <p>Your account has been successfully created.</p>
+      <button onclick="closeModal()">OK</button>
+    </div>
+  </div>
+</body>
+</html>

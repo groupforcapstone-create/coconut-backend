@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard 🌴</title>
+
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<style>
+body {
+  margin:0; font-family:"Segoe UI", Arial, sans-serif;
+  background:linear-gradient(135deg,#a8e6cf,#dcedc1); color:#1B5E20;
+}
+.container {
+  max-width:95%; margin:20px auto; padding:20px;
+  border-radius:16px; background:rgba(255,255,255,0.95);
+  box-shadow:0 8px 20px rgba(0,0,0,0.2);
+}
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.header h2 { font-size:2rem; margin:0; }
+.icon-bar i {
+  font-size:22px; color:#fff; padding:10px; border-radius:50%;
+  cursor:pointer; margin-left:10px; transition:0.3s; background:#43A047;
+}
+.icon-bar i.logout { background:#f57c00; }
+.icon-bar i:hover { opacity:0.8; }
+h3 { color:#2E7D32; margin:12px 0 6px; }
+.info-box { margin-bottom:20px; padding:12px; background:#C8E6C9; border-radius:12px; }
+.info-box p { margin:6px 0; font-weight:bold; }
+.table-wrapper { overflow-x:auto; margin-top:15px; }
+table { width:100%; border-collapse:collapse; font-size:0.95rem; }
+th, td { padding:10px; border:1px solid #ddd; text-align:left; }
+th { background-color:#C8E6C9; }
+td .action-btn { font-size:14px; margin-right:6px; cursor:pointer; padding:6px 8px; border-radius:6px; border:none; color:white; transition:0.2s; }
+td .delete { background-color:#D32F2F; }
+td .view { background-color:#1976D2; }
+td .delete:hover, td .view:hover { opacity:0.85; }
+.no-data { text-align:center; color:#555; font-style:italic; }
+.product-img { width:50px; height:50px; object-fit:cover; border-radius:6px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">
+    <h2>🌴 Admin Dashboard</h2>
+    <div class="icon-bar">
+      <i class="fas fa-sign-out-alt logout" title="Logout" onclick="logout()"></i>
+    </div>
+  </div>
+
+  <!-- Admin Info -->
+  <section class="info-box">
+    <h3>👤 Admin Info</h3>
+    <p><strong>Name:</strong> Jamesy Acolicol</p>
+    <p><strong>Email:</strong> groupforcapstone@gmail.com</p>
+    <p><strong>Role:</strong> Admin</p>
+  </section>
+
+  <!-- Sellers Section -->
+  <section>
+    <h3>👥 Sellers</h3>
+    <div class="table-wrapper">
+      <table id="seller-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Farm</th>
+            <th>Role</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="5" class="no-data">Loading sellers...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Products Section -->
+  <section>
+    <h3>🛒 Products</h3>
+    <div class="table-wrapper">
+      <table id="product-table">
+        <thead>
+          <tr>
+            <th>Seller</th>
+            <th>Product</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>Description</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="6" class="no-data">Loading products...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDjsNeExHM1YzGGaAmNrOfOC_TRnTaizZQ",
+  authDomain: "coconutproject2-f55ce.firebaseapp.com",
+  projectId: "coconutproject2-f55ce",
+};
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+const ADMIN_EMAIL = "groupforcapstone@gmail.com";
+
+// ===== AUTH & ADMIN CHECK =====
+auth.onAuthStateChanged(async (user) => {
+  if (!user) window.location.href = "index.html";
+  if (user.email !== ADMIN_EMAIL) {
+    alert("⚠️ Access denied — Admin only.");
+    auth.signOut();
+    return;
+  }
+  await loadSellers();
+  await loadAllProducts();
+});
+
+// ===== LOGOUT =====
+function logout() {
+  auth.signOut().then(() => window.location.href = "index.html");
+}
+
+// ===== LOAD SELLERS =====
+async function loadSellers() {
+  const tbody = document.querySelector("#seller-table tbody");
+  tbody.innerHTML = '<tr><td colspan="5" class="no-data">No sellers found.</td></tr>';
+
+  try {
+    const snapshot = await db.collection("sellers").get();
+    if (snapshot.empty) return;
+
+    tbody.innerHTML = '';
+    snapshot.forEach(doc => {
+      const s = doc.data();
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${s.name || "N/A"}</td>
+        <td>${s.email || "N/A"}</td>
+        <td>${s.farmName || "N/A"}</td>
+        <td>${s.role || "Seller"}</td>
+        <td>
+          <button class="action-btn view" onclick="viewProducts('${doc.id}')">View Products</button>
+          <button class="action-btn delete" onclick="deleteSeller('${doc.id}')">Delete</button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="5" class="no-data">Error loading sellers</td></tr>';
+  }
+}
+
+// ===== LOAD ALL PRODUCTS =====
+async function loadAllProducts() {
+  const tbody = document.querySelector("#product-table tbody");
+  tbody.innerHTML = '<tr><td colspan="6" class="no-data">No products found.</td></tr>';
+
+  try {
+    const sellersSnap = await db.collection("sellers").get();
+    if (sellersSnap.empty) return;
+
+    tbody.innerHTML = '';
+    for (const doc of sellersSnap.docs) {
+      const seller = doc.data();
+      const productsSnap = await db.collection("sellers").doc(doc.id).collection("products").get();
+      productsSnap.forEach(prodDoc => {
+        const p = prodDoc.data();
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${seller.name || "N/A"}</td>
+          <td>${p.name || "N/A"}</td>
+          <td>₱${parseFloat(p.price||0).toFixed(2)}</td>
+          <td>${p.quantity || 0}</td>
+          <td>${p.description || ""}</td>
+          <td>
+            <button class="action-btn delete" onclick="deleteProduct('${doc.id}','${prodDoc.id}')">Delete</button>
+          </td>`;
+        tbody.appendChild(row);
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="6" class="no-data">Error loading products</td></tr>';
+  }
+}
+
+// ===== VIEW PRODUCTS BY SELLER =====
+async function viewProducts(sellerId) {
+  const tbody = document.querySelector("#product-table tbody");
+  tbody.innerHTML = '<tr><td colspan="6" class="no-data">No products found.</td></tr>';
+
+  try {
+    const sellerDoc = await db.collection("sellers").doc(sellerId).get();
+    const seller = sellerDoc.data();
+    const snapshot = await db.collection("sellers").doc(sellerId).collection("products").get();
+    if (snapshot.empty) return;
+
+    tbody.innerHTML = '';
+    snapshot.forEach(doc => {
+      const p = doc.data();
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${seller.name}</td>
+        <td>${p.name || "N/A"}</td>
+        <td>₱${parseFloat(p.price||0).toFixed(2)}</td>
+        <td>${p.quantity || 0}</td>
+        <td>${p.description || ""}</td>
+        <td>
+          <button class="action-btn delete" onclick="deleteProduct('${sellerId}','${doc.id}')">Delete</button>
+        </td>`;
+      tbody.appendChild(row);
+    });
+  } catch(err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="6" class="no-data">Error loading products</td></tr>';
+  }
+}
+
+// ===== DELETE SELLER =====
+async function deleteSeller(sellerId) {
+  if (!confirm("⚠️ Delete this seller and all their products?")) return;
+
+  try {
+    const productsSnap = await db.collection("sellers").doc(sellerId).collection("products").get();
+    for (const doc of productsSnap.docs) await doc.ref.delete();
+    await db.collection("sellers").doc(sellerId).delete();
+
+    alert("✅ Seller deleted!");
+    await loadSellers();
+    await loadAllProducts();
+  } catch(err) {
+    alert("⚠️ " + err.message);
+  }
+}
+
+// ===== DELETE PRODUCT =====
+async function deleteProduct(sellerId, productId) {
+  if (!confirm("⚠️ Delete this product?")) return;
+  try {
+    await db.collection("sellers").doc(sellerId).collection("products").doc(productId).delete();
+    alert("✅ Product deleted!");
+    await loadAllProducts();
+  } catch(err) {
+    alert("⚠️ " + err.message);
+  }
+}
+</script>
+</body>
+</html>

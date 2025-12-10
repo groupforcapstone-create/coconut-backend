@@ -1,9 +1,10 @@
 # ============================================================
-#                       server.py (REWRITE FOR RENDER)
+#                       render.py (FOR RENDER)
 # ============================================================
 
 import os
 import io
+import json
 import base64
 import requests
 import numpy as np
@@ -18,7 +19,6 @@ from firebase_admin import credentials, firestore
 # ---------------- PATHS (relative for Render) ----------------
 BASE_PATH = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_PATH, "cnn_model4.h5")
-SERVICE_ACCOUNT_PATH = os.path.join(BASE_PATH, "serviceAccountKey.json")
 TEMPLATES_PATH = os.path.join(BASE_PATH, "templates")
 STATIC_PATH = os.path.join(BASE_PATH, "static")
 
@@ -35,10 +35,14 @@ print("📦 Loading CNN model...")
 model = load_model(MODEL_PATH)
 print("✅ Model loaded successfully.")
 
-# ---------------- FIREBASE SETUP ----------------
+# ---------------- FIREBASE SETUP USING ENV VARIABLE ----------------
 try:
     if not firebase_admin._apps:
-        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+        firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+        if not firebase_json:
+            raise ValueError("Missing FIREBASE_CREDENTIALS environment variable")
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred)
     db = firestore.client()
     print("✅ Firebase connected.")
@@ -183,6 +187,5 @@ def predict_route():
 
 # ---------------- RUN SERVER ----------------
 if __name__ == "__main__":
-    # On Render, debug should be False
     print("\n🚀 Server running on port 5000")
     app.run(host="0.0.0.0", port=5000, debug=False)

@@ -1,3 +1,8 @@
+# Upgrade build tools
+pip>=25.3
+setuptools>=68.0
+wheel>=0.40
+
 # Flask & related
 Flask==2.3.3
 flask-cors==6.0.1
@@ -7,8 +12,8 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 blinker==1.9.0
 
-# Pillow for image processing
-Pillow==10.0.1
+# Pillow for image processing (downgraded)
+Pillow==9.5.0
 
 # Requests for HTTP
 requests==2.32.4

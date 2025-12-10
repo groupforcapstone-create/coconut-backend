@@ -1,8 +1,50 @@
-Flask==2.3.3
-flask-cors==6.0.1
-numpy==1.26.2
-Pillow==10.1.0
-requests==2.31.0
-firebase-admin==6.1.1
-gunicorn==21.2.0
-tensorflow==2.20.0
+# -------------------------------
+# Web Framework
+# -------------------------------
+# Flask: Main web framework for building the backend API
+Flask>=2.3.3,<3.0
+
+# flask-cors: To handle Cross-Origin Resource Sharing (CORS)
+flask-cors>=6.0.1,<7.0
+
+# -------------------------------
+# Numerical and Machine Learning Libraries
+# -------------------------------
+# numpy: Fundamental package for numerical computations
+numpy>=1.26.2,<1.27
+
+# tensorflow: Machine learning and deep learning framework
+# TensorFlow 2.20 supports Python 3.11+. For Python 3.13, check if prebuilt wheel is available.
+tensorflow>=2.20.0,<2.21
+
+# -------------------------------
+# Image Processing
+# -------------------------------
+# Pillow: Image processing library (for opening, manipulating, saving images)
+Pillow>=10.1.0,<11.0
+
+# -------------------------------
+# HTTP Requests
+# -------------------------------
+# requests: To make HTTP requests to external APIs
+requests>=2.31.0,<3.0
+
+# -------------------------------
+# Firebase Admin SDK
+# -------------------------------
+# firebase-admin: Admin SDK for interacting with Firebase services
+firebase-admin>=6.1.1,<7.0
+
+# -------------------------------
+# WSGI Server
+# -------------------------------
+# gunicorn: Production WSGI server for Flask apps
+gunicorn>=21.2.0,<22.0
+
+# -------------------------------
+# Build Tools (Optional but Recommended)
+# -------------------------------
+# Ensures smooth builds of packages like numpy, Pillow, TensorFlow
+pip>=25.3
+setuptools>=68.0
+wheel>=0.41

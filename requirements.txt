@@ -1,4 +1,3 @@
-
 Flask
 flask-cors
 Werkzeug
@@ -9,3 +8,7 @@ blinker
 Pillow
 gunicorn
 requests
+numpy
+tensorflow
+firebase-admin
+

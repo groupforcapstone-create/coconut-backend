@@ -6,19 +6,16 @@ import os
 import io
 import json
 import base64
-import requests
 import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
 
-# TensorFlow lazy import
-model = None
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cnn_model4.h5")
-
 # ---------------- FLASK SETUP ----------------
-TEMPLATES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
-STATIC_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_PATH = os.path.join(BASE_DIR, "templates")
+STATIC_PATH = os.path.join(BASE_DIR, "static")
+MODEL_PATH = os.path.join(BASE_DIR, "cnn_model4.h5")
 
 app = Flask(__name__, template_folder=TEMPLATES_PATH, static_folder=STATIC_PATH)
 CORS(app)
@@ -29,16 +26,16 @@ try:
     import firebase_admin
     from firebase_admin import credentials, firestore
 
-    if not firebase_admin._apps:
-        firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
-        if firebase_json:
-            cred_dict = json.loads(firebase_json)
-            cred = credentials.Certificate(cred_dict)
+    firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+    if firebase_json:
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
+        if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
-            db = firestore.client()
-            print("✅ Firebase connected.")
-        else:
-            print("⚠️ FIREBASE_CREDENTIALS not set. Firebase disabled.")
+        db = firestore.client()
+        print("✅ Firebase connected.")
+    else:
+        print("⚠️ FIREBASE_CREDENTIALS not set. Firebase disabled.")
 except Exception as e:
     print(f"⚠️ Firebase setup failed: {e}")
     db = None
@@ -74,6 +71,8 @@ CLASS_INFO = {
 }
 
 # ---------------- HELPER FUNCTIONS ----------------
+model = None
+
 def lazy_load_model():
     global model
     if model is None:
@@ -90,14 +89,12 @@ def pil_from_base64(data_base64: str):
     return Image.open(io.BytesIO(decoded)).convert("RGB")
 
 def pil_from_file_storage(file_storage):
-    file_stream = file_storage.stream.read()
-    return Image.open(io.BytesIO(file_stream)).convert("RGB")
+    return Image.open(io.BytesIO(file_storage.read())).convert("RGB")
 
 def preprocess_pil_image(pil_img):
     pil_img = pil_img.resize(IMG_SIZE)
     arr = np.array(pil_img) / 255.0
-    arr = np.expand_dims(arr, axis=0)
-    return arr
+    return np.expand_dims(arr, axis=0)
 
 def predict_coconut_from_pil(pil_img):
     mdl = lazy_load_model()
@@ -152,7 +149,7 @@ def predict():
     result = predict_coconut_from_pil(pil_img)
     result["image_source"] = image_source
 
-    # Optional Firebase save
+    # Save to Firestore if valid
     if db and result.get("is_valid", False):
         try:
             db.collection("CoconutPredictions").add(result)
@@ -163,5 +160,6 @@ def predict():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    print("\n🚀 Server running on port 5000")
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    print(f"\n🚀 Server running on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

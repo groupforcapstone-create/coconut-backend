@@ -1,5 +1,5 @@
 # ============================================================
-# server.py - Coconut Seedling Detection API
+#                  server_light.py
 # ============================================================
 
 import os
@@ -10,44 +10,28 @@ import numpy as np
 from PIL import Image
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
+
+# TensorFlow imports
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image as keras_image
+
+# Firebase (optional)
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# -------------------- PATHS --------------------
+# ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 MODEL_PATH = os.path.join(BASE_DIR, "cnn_model4.h5")
 SERVICE_ACCOUNT_PATH = os.path.join(BASE_DIR, "serviceAccountKey.json")
 TEMPLATES_PATH = os.path.join(BASE_DIR, "templates")
 STATIC_PATH = os.path.join(BASE_DIR, "static")
 
-# -------------------- FLASK APP --------------------
-app = Flask(
-    __name__,
-    template_folder=TEMPLATES_PATH,
-    static_folder=STATIC_PATH
-)
+# ---------------- FLASK APP ----------------
+app = Flask(__name__, template_folder=TEMPLATES_PATH, static_folder=STATIC_PATH)
 CORS(app)
 
-# -------------------- LOAD CNN MODEL --------------------
-print("📦 Loading CNN model...")
-model = load_model(MODEL_PATH)
-print("✅ CNN model loaded")
-
-# -------------------- FIREBASE INIT --------------------
-db = None
-try:
-    if not firebase_admin._apps:
-        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-        firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    print("✅ Firebase connected")
-except Exception as e:
-    print("⚠️ Firebase disabled:", e)
-
-# -------------------- CONSTANTS --------------------
+# ---------------- GLOBAL MODEL ----------------
+model = None  # Load on first request
 IMG_SIZE = (224, 224)
 CONFIDENCE_THRESHOLD = 0.6
 
@@ -71,84 +55,83 @@ CLASS_INFO = {
     "NotCoconut": {"class_name": "Invalid Image", "lifespan": "None", "definition": "Uploaded image is not a coconut seedling."}
 }
 
-# -------------------- IMAGE HELPERS --------------------
+# ---------------- FIREBASE ----------------
+db = None
+try:
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print("⚠️ Firebase not connected:", e)
+
+# ---------------- IMAGE HELPERS ----------------
 def pil_from_base64(data):
-    """Convert base64 string to PIL Image"""
     if data.startswith("data:"):
         data = data.split(",", 1)[1]
     decoded = base64.b64decode(data)
     return Image.open(io.BytesIO(decoded)).convert("RGB")
 
 def pil_from_url(url):
-    """Load image from URL"""
     r = requests.get(url, timeout=8)
     r.raise_for_status()
     return Image.open(io.BytesIO(r.content)).convert("RGB")
 
 def pil_from_file(file_storage):
-    """Load image from uploaded file"""
     return Image.open(io.BytesIO(file_storage.read())).convert("RGB")
 
 def preprocess(img):
-    """Resize and normalize image for model"""
     img = img.resize(IMG_SIZE)
     arr = keras_image.img_to_array(img) / 255.0
     return np.expand_dims(arr, axis=0)
 
-# -------------------- PREDICTION --------------------
+# ---------------- PREDICTION ----------------
 def predict_image(img):
-    x = preprocess(img)
-    preds = model.predict(x, verbose=0)
-    
-    idx = int(np.argmax(preds))
-    conf = float(preds[0][idx])
-    label = CLASSES[idx]
+    global model
+    if model is None:
+        try:
+            print("📦 Loading CNN model (lazy)...")
+            model = load_model(MODEL_PATH)
+            print("✅ CNN model loaded")
+        except Exception as e:
+            return {"error": f"Failed to load model: {e}"}
 
-    # Handle unknown and low-confidence predictions
-    if label in ["Unknown Dwarf Variety", "Unknown Tall Variety"]:
-        label = "Unknown Dwarf" if "Dwarf" in label else "Unknown Tall"
-        conf = 0.55
+    try:
+        x = preprocess(img)
+        preds = model.predict(x, verbose=0)
+        idx = int(np.argmax(preds))
+        conf = float(preds[0][idx])
+        label = CLASSES[idx]
 
-    if label == "NotCoconut" or conf < CONFIDENCE_THRESHOLD:
-        label = "NotCoconut"
-        conf = 0.0
+        if label in ["Unknown Dwarf Variety", "Unknown Tall Variety"]:
+            label = "Unknown Dwarf" if "Dwarf" in label else "Unknown Tall"
+            conf = 0.55
 
-    info = CLASS_INFO.get(label, {})
-    return {
-        "class_name": info.get("class_name", label),
-        "lifespan": info.get("lifespan", "N/A"),
-        "definition": info.get("definition", "N/A"),
-        "confidence": round(conf, 4),
-        "is_valid": label not in ["Unknown Dwarf", "Unknown Tall", "NotCoconut"]
-    }
+        if label == "NotCoconut" or conf < CONFIDENCE_THRESHOLD:
+            label = "NotCoconut"
+            conf = 0.0
 
-# -------------------- ROUTES --------------------
+        info = CLASS_INFO.get(label, {})
+        return {
+            "class_name": info.get("class_name", label),
+            "lifespan": info.get("lifespan", "N/A"),
+            "definition": info.get("definition", "N/A"),
+            "confidence": round(conf, 4),
+            "is_valid": label not in ["Unknown Dwarf", "Unknown Tall", "NotCoconut"]
+        }
+    except Exception as e:
+        return {"error": f"Prediction failed: {e}"}
+
+# ---------------- ROUTES ----------------
 @app.route("/")
 def home():
     return render_template("index.html")
-
-@app.route("/dashboard.html")
-def dashboard():
-    return render_template("dashboard.html")
-
-@app.route("/admin.html")
-def admin():
-    return render_template("admin.html")
-
-@app.route("/register.html")
-def register():
-    return render_template("register.html")
-
-@app.route("/static/<path:filename>")
-def static_files(filename):
-    return send_from_directory(STATIC_PATH, filename)
 
 @app.route("/predict", methods=["POST"])
 def predict():
     img = None
     source = None
 
-    # JSON requests
     if request.is_json:
         data = request.get_json()
         if "image_base64" in data:
@@ -158,7 +141,6 @@ def predict():
             img = pil_from_url(data["image_url"])
             source = "url"
 
-    # Multipart form upload
     if img is None and "image" in request.files:
         img = pil_from_file(request.files["image"])
         source = "multipart"
@@ -169,8 +151,7 @@ def predict():
     result = predict_image(img)
     result["image_source"] = source
 
-    # Save to Firebase if enabled
-    if db and result["is_valid"]:
+    if db and result.get("is_valid"):
         try:
             db.collection("CoconutPredictions").add(result)
         except Exception as e:
@@ -178,12 +159,7 @@ def predict():
 
     return jsonify(result)
 
-# -------------------- HEALTH CHECK --------------------
-@app.route("/healthz", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy"}), 200
-
-# -------------------- RUN --------------------
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     print(f"🚀 Server running on port {port}")

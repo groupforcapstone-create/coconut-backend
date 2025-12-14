@@ -1,44 +1,8 @@
-# Upgrade build tools
-pip>=25.3
-setuptools>=68.0
-wheel>=0.40
-
-# Flask & related
-Flask==2.3.3
-flask-cors==6.0.1
-Werkzeug==2.3.7
-click==8.3.1
-itsdangerous==2.2.0
-Jinja2==3.1.6
-blinker==1.9.0
-
-# Pillow for image processing (downgraded)
-Pillow==9.5.0
-
-# Requests for HTTP
-requests==2.32.4
-
-# Firebase admin
-firebase-admin==6.8.0
-google-cloud-firestore==2.21.0
-google-cloud-storage==3.7.0
-
-# TensorFlow & ML dependencies
-tensorflow==2.20.0
-numpy==1.26.2
-h5py==3.15.1
-keras==3.12.0
-protobuf==4.24.3
-opt_einsum==3.4.0
-absl-py==2.3.1
-termcolor==3.2.0
-wrapt==2.0.1
-typing_extensions==4.15.0
-gast==0.7.0
-astunparse==1.6.3
-tensorboard==2.20.0
-google-pasta==0.2.0
-flatbuffers==25.9.23
-
-# Gunicorn for deployment
-gunicorn==21.2.0
+Flask
+flask-cors
+Werkzeug
+click
+itsdangerous
+Jinja2
+blinker
+Pillow

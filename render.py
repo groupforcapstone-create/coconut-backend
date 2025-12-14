@@ -1,5 +1,5 @@
 # ============================================================
-#                  server_light.py
+#                  server_light.py (FULL REWRITE)
 # ============================================================
 
 import os
@@ -8,7 +8,7 @@ import base64
 import requests
 import numpy as np
 from PIL import Image
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 
 # TensorFlow imports
@@ -31,7 +31,7 @@ app = Flask(__name__, template_folder=TEMPLATES_PATH, static_folder=STATIC_PATH)
 CORS(app)
 
 # ---------------- GLOBAL MODEL ----------------
-model = None  # Load on first request
+model = None  # Lazy loading
 IMG_SIZE = (224, 224)
 CONFIDENCE_THRESHOLD = 0.6
 
@@ -50,9 +50,9 @@ CLASS_INFO = {
     "Catigan Dwarf Coconut": {"class_name": "Catigan Dwarf Coconut", "lifespan": "60–90 years", "definition": "Dwarf variety known for early fruiting."},
     "Laguna Tall Coconut": {"class_name": "Laguna Tall Coconut", "lifespan": "60–90 years", "definition": "Tall variety adaptable to different environments."},
     "Tacunan Dwarf Coconut": {"class_name": "Tacunan Dwarf Coconut", "lifespan": "60–90 years", "definition": "Compact dwarf coconut with quality nuts."},
-    "Unknown Tall": {"class_name": "Unknown Tall Coconut", "lifespan": "Unknown", "definition": "Possibly a tall coconut variety."},
-    "Unknown Dwarf": {"class_name": "Unknown Dwarf Coconut", "lifespan": "Unknown", "definition": "Possibly a dwarf coconut variety."},
-    "NotCoconut": {"class_name": "Invalid Image", "lifespan": "None", "definition": "Uploaded image is not a coconut seedling."}
+    "NotCoconut": {"class_name": "Invalid Image", "lifespan": "None", "definition": "Uploaded image is not a coconut seedling."},
+    "Unknown Dwarf": {"class_name": "Invalid Image", "lifespan": "None", "definition": "Possibly a dwarf coconut variety."},
+    "Unknown Tall": {"class_name": "Invalid Image", "lifespan": "None", "definition": "Possibly a tall coconut variety."}
 }
 
 # ---------------- FIREBASE ----------------
@@ -66,27 +66,27 @@ except Exception as e:
     print("⚠️ Firebase not connected:", e)
 
 # ---------------- IMAGE HELPERS ----------------
-def pil_from_base64(data):
+def pil_from_base64(data: str) -> Image.Image:
     if data.startswith("data:"):
         data = data.split(",", 1)[1]
     decoded = base64.b64decode(data)
     return Image.open(io.BytesIO(decoded)).convert("RGB")
 
-def pil_from_url(url):
+def pil_from_url(url: str) -> Image.Image:
     r = requests.get(url, timeout=8)
     r.raise_for_status()
     return Image.open(io.BytesIO(r.content)).convert("RGB")
 
-def pil_from_file(file_storage):
+def pil_from_file(file_storage) -> Image.Image:
     return Image.open(io.BytesIO(file_storage.read())).convert("RGB")
 
-def preprocess(img):
+def preprocess(img: Image.Image) -> np.ndarray:
     img = img.resize(IMG_SIZE)
     arr = keras_image.img_to_array(img) / 255.0
     return np.expand_dims(arr, axis=0)
 
 # ---------------- PREDICTION ----------------
-def predict_image(img):
+def predict_image(img: Image.Image, location: str = "None") -> dict:
     global model
     if model is None:
         try:
@@ -94,7 +94,15 @@ def predict_image(img):
             model = load_model(MODEL_PATH)
             print("✅ CNN model loaded")
         except Exception as e:
-            return {"error": f"Failed to load model: {e}"}
+            return {
+                "class_name": "Invalid Image",
+                "lifespan": "None",
+                "definition": "None",
+                "confidence": 0.0,
+                "location": location,
+                "is_valid": False,
+                "error": f"Failed to load model: {e}"
+            }
 
     try:
         x = preprocess(img)
@@ -103,24 +111,37 @@ def predict_image(img):
         conf = float(preds[0][idx])
         label = CLASSES[idx]
 
-        if label in ["Unknown Dwarf Variety", "Unknown Tall Variety"]:
-            label = "Unknown Dwarf" if "Dwarf" in label else "Unknown Tall"
-            conf = 0.55
+        # Force invalid for unknown or low-confidence predictions
+        if label in ["NotCoconut", "Unknown Dwarf Variety", "Unknown Tall Variety"] or conf < CONFIDENCE_THRESHOLD:
+            return {
+                "class_name": "Invalid Image",
+                "lifespan": "None",
+                "definition": "None",
+                "confidence": 0.0,
+                "location": location,
+                "is_valid": False
+            }
 
-        if label == "NotCoconut" or conf < CONFIDENCE_THRESHOLD:
-            label = "NotCoconut"
-            conf = 0.0
-
+        # Valid prediction
         info = CLASS_INFO.get(label, {})
         return {
             "class_name": info.get("class_name", label),
             "lifespan": info.get("lifespan", "N/A"),
             "definition": info.get("definition", "N/A"),
             "confidence": round(conf, 4),
-            "is_valid": label not in ["Unknown Dwarf", "Unknown Tall", "NotCoconut"]
+            "location": location,
+            "is_valid": True
         }
     except Exception as e:
-        return {"error": f"Prediction failed: {e}"}
+        return {
+            "class_name": "Invalid Image",
+            "lifespan": "None",
+            "definition": "None",
+            "confidence": 0.0,
+            "location": location,
+            "is_valid": False,
+            "error": f"Prediction failed: {e}"
+        }
 
 # ---------------- ROUTES ----------------
 @app.route("/")
@@ -132,25 +153,47 @@ def predict():
     img = None
     source = None
 
+    # ---------------- Input handling ----------------
     if request.is_json:
         data = request.get_json()
         if "image_base64" in data:
             img = pil_from_base64(data["image_base64"])
             source = "base64"
         elif "image_url" in data:
-            img = pil_from_url(data["image_url"])
-            source = "url"
+            try:
+                img = pil_from_url(data["image_url"])
+                source = "url"
+            except Exception:
+                return jsonify({
+                    "class_name": "Invalid Image",
+                    "lifespan": "None",
+                    "definition": "None",
+                    "confidence": 0.0,
+                    "location": "None",
+                    "is_valid": False,
+                    "error": "Failed to fetch image from URL"
+                }), 400
 
     if img is None and "image" in request.files:
         img = pil_from_file(request.files["image"])
         source = "multipart"
 
     if img is None:
-        return jsonify({"error": "No image provided"}), 400
+        return jsonify({
+            "class_name": "Invalid Image",
+            "lifespan": "None",
+            "definition": "None",
+            "confidence": 0.0,
+            "location": "None",
+            "is_valid": False,
+            "error": "No image provided"
+        }), 400
 
-    result = predict_image(img)
+    # ---------------- Prediction ----------------
+    result = predict_image(img, location="None")
     result["image_source"] = source
 
+    # ---------------- Save to Firebase ----------------
     if db and result.get("is_valid"):
         try:
             db.collection("CoconutPredictions").add(result)

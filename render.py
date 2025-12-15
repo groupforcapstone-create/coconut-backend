@@ -1,24 +1,22 @@
 # ============================================================
-#                     render.py (FULL)
+#                       render.py (FULL FIX)
 # ============================================================
 
 import os
 import io
 import json
-import base64
-import requests
 from PIL import Image
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image as keras_image
+import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
 
 # ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "cnn_model4.h5")
-
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
@@ -29,7 +27,7 @@ CORS(app)
 # ---------------- MODEL ----------------
 model = None
 IMG_SIZE = (224, 224)
-CONFIDENCE_THRESHOLD = 0.6
+CONFIDENCE_THRESHOLD = 0.4  # lower to allow predictions even if slightly uncertain
 
 CLASSES = [
     "Baybay Tall Coconut",
@@ -101,22 +99,23 @@ def predict_image(img):
     confidence = float(preds[0][idx])
     label = CLASSES[idx]
 
-    if confidence < CONFIDENCE_THRESHOLD or "Unknown" in label or label == "NotCoconut":
-        return {
-            "class_name": "Invalid Image",
-            "lifespan": "None",
-            "definition": "None",
-            "confidence": 0.0,
-            "is_valid": False
-        }
+    # Always return prediction, even if low confidence
+    if confidence < CONFIDENCE_THRESHOLD:
+        label = f"Low Confidence: {label}"
 
-    info = CLASS_INFO[label]
+    # If label not in CLASS_INFO, return basic info
+    info = CLASS_INFO.get(label, {
+        "class_name": label,
+        "lifespan": "Unknown",
+        "definition": "No info available"
+    })
+
     return {
         "class_name": info["class_name"],
         "lifespan": info["lifespan"],
         "definition": info["definition"],
         "confidence": round(confidence, 4),
-        "is_valid": True
+        "is_valid": label not in ["NotCoconut", "Unknown Dwarf Variety", "Unknown Tall Variety"]
     }
 
 # ---------------- ROUTES ----------------
@@ -124,24 +123,12 @@ def predict_image(img):
 def index():
     return render_template("index.html")
 
-@app.route("/dashboard.html")
-def dashboard():
-    return render_template("dashboard.html")
-
-@app.route("/admin.html")
-def admin():
-    return render_template("admin.html")
-
-@app.route("/register.html")
-def register():
-    return render_template("register.html")
-
 @app.route("/predict", methods=["POST"])
 def predict():
     img = None
     location = None
 
-    # 1️⃣ JSON input (class_name)
+    # JSON input (optional)
     if request.is_json:
         data = request.get_json()
         location = data.get("location", "Unknown")
@@ -168,7 +155,7 @@ def predict():
                     print("⚠️ Firestore write failed:", e)
             return jsonify(result)
 
-    # 2️⃣ File upload (image)
+    # File upload
     if "image" in request.files:
         img = load_image_from_file(request.files["image"])
         location = request.form.get("location", "Unknown")

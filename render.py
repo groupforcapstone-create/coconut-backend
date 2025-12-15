@@ -1,61 +1,72 @@
 # ============================================================
-#                       render.py
+#                     render.py (FULL)
 # ============================================================
 
 import os
+import io
 import json
-from flask import Flask, request, jsonify, render_template
+import base64
+import requests
+from PIL import Image
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_cors import CORS
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image as keras_image
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# ---------------- FLASK SETUP ----------------
+# ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"), static_folder=os.path.join(BASE_DIR, "static"))
+MODEL_PATH = os.path.join(BASE_DIR, "cnn_model4.h5")
+
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+# ---------------- FLASK APP ----------------
+app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 CORS(app)
 
-# ---------------- FIREBASE SETUP ----------------
-db = None
+# ---------------- MODEL ----------------
+model = None
+IMG_SIZE = (224, 224)
+CONFIDENCE_THRESHOLD = 0.6
+
+CLASSES = [
+    "Baybay Tall Coconut",
+    "Catigan Dwarf Coconut",
+    "Laguna Tall Coconut",
+    "Tacunan Dwarf Coconut",
+    "NotCoconut",
+    "Unknown Dwarf Variety",
+    "Unknown Tall Variety"
+]
+
 CLASS_INFO = {
     "Baybay Tall Coconut": {
         "class_name": "Baybay Tall Coconut",
-        "lifespan": "60-90 years",
-        "definition": "A tall coconut variety commonly grown for its strong trunk and high yield."
+        "lifespan": "60–90 years",
+        "definition": "Tall coconut variety with strong trunk and high yield."
     },
     "Catigan Dwarf Coconut": {
         "class_name": "Catigan Dwarf Coconut",
-        "lifespan": "60-90 years",
-        "definition": "A dwarf coconut variety known for early fruiting and consistent nut production."
+        "lifespan": "60–90 years",
+        "definition": "Dwarf variety known for early fruiting."
     },
     "Laguna Tall Coconut": {
         "class_name": "Laguna Tall Coconut",
-        "lifespan": "60-90 years",
-        "definition": "A tall coconut variety recognized for its durability and adaptability."
+        "lifespan": "60–90 years",
+        "definition": "Tall variety adaptable to different environments."
     },
     "Tacunan Dwarf Coconut": {
         "class_name": "Tacunan Dwarf Coconut",
-        "lifespan": "60-90 years",
-        "definition": "A compact dwarf coconut variety valued for its high-quality nuts."
-    },
-    "Unknown Tall": {
-        "class_name": "Unknown Tall Coconut",
-        "lifespan": "Unknown",
-        "definition": "Possibly from a tall coconut group."
-    },
-    "Unknown Dwarf": {
-        "class_name": "Unknown Dwarf Coconut",
-        "lifespan": "Unknown",
-        "definition": "Possibly from a dwarf coconut group."
-    },
-    "NotCoconut": {
-        "class_name": "Invalid Image",
-        "lifespan": "None",
-        "definition": "None"
+        "lifespan": "60–90 years",
+        "definition": "Compact dwarf coconut with quality nuts."
     }
 }
 
+# ---------------- FIREBASE INIT ----------------
+db = None
 try:
-    # Use JSON from ENV VAR (Render Secret)
     firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
     if firebase_json:
         cred_dict = json.loads(firebase_json)
@@ -66,65 +77,109 @@ try:
     else:
         print("⚠️ FIREBASE_CREDENTIALS not set")
 except Exception as e:
-    print("⚠️ Firebase initialization failed:", e)
+    print("⚠️ Firebase init failed:", e)
+
+# ---------------- IMAGE HELPERS ----------------
+def load_image_from_file(file):
+    return Image.open(io.BytesIO(file.read())).convert("RGB")
+
+def preprocess_image(img):
+    img = img.resize(IMG_SIZE)
+    arr = keras_image.img_to_array(img) / 255.0
+    return arr[np.newaxis, ...]
+
+def predict_image(img):
+    global model
+    if model is None:
+        print("📦 Loading CNN model...")
+        model = load_model(MODEL_PATH)
+        print("✅ Model loaded")
+
+    x = preprocess_image(img)
+    preds = model.predict(x, verbose=0)
+    idx = int(preds.argmax())
+    confidence = float(preds[0][idx])
+    label = CLASSES[idx]
+
+    if confidence < CONFIDENCE_THRESHOLD or "Unknown" in label or label == "NotCoconut":
+        return {
+            "class_name": "Invalid Image",
+            "lifespan": "None",
+            "definition": "None",
+            "confidence": 0.0,
+            "is_valid": False
+        }
+
+    info = CLASS_INFO[label]
+    return {
+        "class_name": info["class_name"],
+        "lifespan": info["lifespan"],
+        "definition": info["definition"],
+        "confidence": round(confidence, 4),
+        "is_valid": True
+    }
 
 # ---------------- ROUTES ----------------
 @app.route("/")
-@app.route("/index.html")
-def index_html():
+def index():
     return render_template("index.html")
 
 @app.route("/dashboard.html")
-def dashboard_html():
+def dashboard():
     return render_template("dashboard.html")
 
 @app.route("/admin.html")
-def admin_html():
+def admin():
     return render_template("admin.html")
 
 @app.route("/register.html")
-def register_html():
+def register():
     return render_template("register.html")
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """
-    Expects JSON:
-    {
-        "class_name": "Baybay Tall Coconut",
-        "location": "Laguna"
-    }
-    Saves valid predictions to Firestore.
-    """
-    if not db:
-        return jsonify({"error": "Firestore not initialized"}), 500
+    img = None
+    location = None
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON data provided"}), 400
+    # 1️⃣ JSON input (class_name)
+    if request.is_json:
+        data = request.get_json()
+        location = data.get("location", "Unknown")
+        class_name = data.get("class_name")
+        if class_name:
+            info = CLASS_INFO.get(class_name, {
+                "class_name": class_name,
+                "lifespan": "Unknown",
+                "definition": "No info available"
+            })
+            is_valid = class_name in CLASS_INFO
+            result = {
+                "class_name": info["class_name"],
+                "lifespan": info["lifespan"],
+                "definition": info["definition"],
+                "location": location,
+                "confidence": 1.0 if is_valid else 0.0,
+                "is_valid": is_valid
+            }
+            if db and is_valid:
+                try:
+                    db.collection("CoconutPredictions").add(result)
+                except Exception as e:
+                    print("⚠️ Firestore write failed:", e)
+            return jsonify(result)
 
-    class_name = data.get("class_name", "Unknown")
-    location = data.get("location", "Unknown")
+    # 2️⃣ File upload (image)
+    if "image" in request.files:
+        img = load_image_from_file(request.files["image"])
+        location = request.form.get("location", "Unknown")
 
-    info = CLASS_INFO.get(class_name, {
-        "class_name": class_name,
-        "lifespan": "Unknown",
-        "definition": "No info available"
-    })
+    if img is None:
+        return jsonify({"error": "No image provided"}), 400
 
-    is_valid = class_name in CLASS_INFO and class_name not in ["Unknown Tall", "Unknown Dwarf", "NotCoconut"]
+    result = predict_image(img)
+    result["location"] = location
 
-    result = {
-        "class_name": info["class_name"],
-        "lifespan": info["lifespan"],
-        "definition": info["definition"],
-        "location": location,
-        "confidence": 1.0 if is_valid else 0.0,
-        "is_valid": is_valid
-    }
-
-    # Save to Firestore if valid
-    if db and is_valid:
+    if db and result.get("is_valid", False):
         try:
             db.collection("CoconutPredictions").add(result)
         except Exception as e:
@@ -135,5 +190,5 @@ def predict():
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Firestore + Pages backend running on port {port}")
+    print(f"🚀 Server running on port {port}")
     app.run(host="0.0.0.0", port=port)

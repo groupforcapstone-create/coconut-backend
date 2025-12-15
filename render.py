@@ -1,5 +1,5 @@
 # ============================================================
-#                       render.py (Firestore + Pages)
+#                       render.py
 # ============================================================
 
 import os
@@ -11,28 +11,11 @@ from firebase_admin import credentials, firestore
 
 # ---------------- FLASK SETUP ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-
-app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
+app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"), static_folder=os.path.join(BASE_DIR, "static"))
 CORS(app)
 
-# ---------------- FIREBASE INIT ----------------
+# ---------------- FIREBASE SETUP ----------------
 db = None
-try:
-    firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
-    if firebase_json:
-        cred_dict = json.loads(firebase_json)
-        cred = credentials.Certificate(cred_dict)
-        firebase_admin.initialize_app(cred)
-        db = firestore.client()
-        print("✅ Firebase connected via ENV VAR")
-    else:
-        print("⚠️ FIREBASE_CREDENTIALS not set")
-except Exception as e:
-    print("⚠️ Firebase init failed:", e)
-
-# ---------------- CLASS INFO ----------------
 CLASS_INFO = {
     "Baybay Tall Coconut": {
         "class_name": "Baybay Tall Coconut",
@@ -71,66 +54,47 @@ CLASS_INFO = {
     }
 }
 
-# ---------------- WEB PAGES ----------------
+try:
+    # Use JSON from ENV VAR (Render Secret)
+    firebase_json = os.environ.get("FIREBASE_CREDENTIALS")
+    if firebase_json:
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+        print("✅ Firebase connected via ENV VAR")
+    else:
+        print("⚠️ FIREBASE_CREDENTIALS not set")
+except Exception as e:
+    print("⚠️ Firebase initialization failed:", e)
+
+# ---------------- ROUTES ----------------
 @app.route("/")
 @app.route("/index.html")
-def index():
+def index_html():
     return render_template("index.html")
 
-@app.route("/register.html")
-def register():
-    return render_template("register.html")
-
 @app.route("/dashboard.html")
-def dashboard():
+def dashboard_html():
     return render_template("dashboard.html")
 
 @app.route("/admin.html")
-def admin():
+def admin_html():
     return render_template("admin.html")
 
-# ---------------- FIRESTORE API ----------------
-@app.route("/add", methods=["POST"])
-def add_document():
-    if not db:
-        return jsonify({"error": "Firestore not initialized"}), 500
+@app.route("/register.html")
+def register_html():
+    return render_template("register.html")
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON data provided"}), 400
-
-    try:
-        doc_ref = db.collection("CoconutPredictions").add(data)
-        return jsonify({"success": True, "doc_id": doc_ref[1].id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/get", methods=["GET"])
-def get_documents():
-    if not db:
-        return jsonify({"error": "Firestore not initialized"}), 500
-
-    try:
-        docs = db.collection("CoconutPredictions").stream()
-        results = []
-        for doc in docs:
-            d = doc.to_dict()
-            d["id"] = doc.id
-            results.append(d)
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ---------------- SIMULATED PREDICT ----------------
 @app.route("/predict", methods=["POST"])
 def predict():
     """
-    Simulate prediction using class_name and optional location.
-    Example JSON input:
+    Expects JSON:
     {
         "class_name": "Baybay Tall Coconut",
-        "location": "Philippines"
+        "location": "Laguna"
     }
+    Saves valid predictions to Firestore.
     """
     if not db:
         return jsonify({"error": "Firestore not initialized"}), 500

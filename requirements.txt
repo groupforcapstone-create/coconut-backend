@@ -1,7 +1,0 @@
-flask
-flask-cors
-tensorflow-cpu
-opencv-python-headless
-numpy
-mysql-connector-python
-gunicorn
